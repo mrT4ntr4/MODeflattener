@@ -1,0 +1,3 @@
+future==0.18.2
+miasm==0.1.3.dev367
+pyparsing==2.4.7
