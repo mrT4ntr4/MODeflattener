@@ -205,11 +205,12 @@ if __name__ == '__main__':
     
     forg = open(args.filename, 'rb')
     fpatch = open(args.patch_filename, 'wb')
+    fpatch.write(forg.read())
 
     loc_db = LocationDB()
 
     global cont
-    cont = Container.from_stream(forg, loc_db)
+    cont = Container.from_stream(open(args.filename, 'rb'), loc_db)
     
     supported_arch = ['x86_32', 'x86_64']
     _log.info("Architecture : %s"  % cont.arch)
@@ -217,8 +218,6 @@ if __name__ == '__main__':
     if cont.arch not in supported_arch:
         _log.error("Architecture unsupported : %s" % cont.arch)
         exit(1)
-
-    fpatch.write(forg.read())
 
     section_ep = cont.bin_stream.bin.virt.parent.getsectionbyvad(cont.entry_point).sh
     bin_base_addr = section_ep.addr - section_ep.offset
