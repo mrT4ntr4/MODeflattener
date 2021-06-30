@@ -30,6 +30,9 @@ optional arguments:
   -l LOG, --log LOG  logging level (default=INFO)
 ```
 
+### Supported Architectures
+- *x86*
+
 ### Bonus
 - [Tim Blazytko's flattening heuristic script](https://gist.github.com/mrphrazer/da32217f231e1dd842986f94aa6d9d37)  
   While disassembling the specified function we can look out for other functions used by it and can make use of this script to automatically detect whether it is a flattened one and try to deobfuscate it. This has already been integrated into the tool!    
