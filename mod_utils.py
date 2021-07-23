@@ -32,15 +32,18 @@ def patch_gen(instrs, loc_db, nop_addrs, link):
         #omitting useless instructions
         if instr.offset not in nop_addrs:
             if instr.is_subcall():
-                #generate asm for fixed calls with relative addrs
-                patch_addr = start_addr + len(final_patch)
-                tgt = loc_db.get_location_offset(instr.args[0].loc_key)
-                _log.info("CALL %#x" % tgt)
-                call_patch_str = "CALL %s" % rel(tgt, patch_addr)
-                _log.debug("call patch : %s" % call_patch_str)
-                call_patch = asmb(call_patch_str, loc_db)
-                final_patch += call_patch
-                _log.debug("call patch asmb : %s" % encode_hex(call_patch))
+                if isinstance(instr.args[0],ExprMem) or isinstance(instr.args[0],ExprId):
+                    final_patch += instr.b
+                else:
+                    #generate asm for fixed calls with relative addrs
+                    patch_addr = start_addr + len(final_patch)
+                    tgt = loc_db.get_location_offset(instr.args[0].loc_key)
+                    _log.info("CALL %#x" % tgt)
+                    call_patch_str = "CALL %s" % rel(tgt, patch_addr)
+                    _log.debug("call patch : %s" % call_patch_str)
+                    call_patch = asmb(call_patch_str, loc_db)
+                    final_patch += call_patch
+                    _log.debug("call patch asmb : %s" % encode_hex(call_patch))
             else:
                 #add the original bytes
                 final_patch += instr.b
@@ -115,7 +118,7 @@ def get_block_father(asmcfg, blk_offset):
     return asmcfg.loc_db.get_location_offset(checklist[-1])
 
 
-def get_phi_vars(ircfg):
+def get_phi_vars(ircfg,loc_db,mdis):
     res = []
     blks = list(ircfg.blocks)
     irblock = (ircfg.blocks[blks[-1]])
@@ -133,13 +136,22 @@ def get_phi_vars(ircfg):
         irblock = ircfg.get_block(list(loc)[0])
         for asg in irblock:
             dst, src = asg.items()[0]
-            if dst == var:
+            if dst == var and isinstance(src,ExprInt):
                 res += [int(src)]
+            elif dst==var and isinstance(src,ExprOp):
+                reachings = ReachingDefinitions(ircfg)
+                digraph = DiGraphDefUse(reachings)
+                # the state var always a leaf
+                for head in digraph.heads():
+                    if head.var == src.args[0]:
+                        head_offset=loc_db.get_location_offset(head.label)
+                        if isinstance(mdis.dis_instr(head_offset).args[1],ExprInt):
+                            res+=[int(mdis.dis_instr(head_offset).args[1])]
 
     return res
 
 
-def find_var_asg(ircfg, var):
+def find_var_asg(ircfg, var,loc_db,mdis):
     val_list = []
     res = {}
     for lbl, irblock in viewitems(ircfg.blocks):
@@ -153,7 +165,16 @@ def find_var_asg(ircfg, var):
                     res['next'] = int(src)
                     val_list += [int(src)]
                 elif isinstance(src, ExprSlice):
-                    phi_vals = get_phi_vars(ircfg)
+                    phi_vals = get_phi_vars(ircfg,loc_db,mdis)
+                    if not phi_vals:
+                        continue
+                    res['true_next'] = phi_vals[0]
+                    res['false_next'] = phi_vals[1]
+                    val_list += phi_vals
+                elif isinstance(src,ExprId):
+                    phi_vals = get_phi_vars(ircfg,None,None)
+                    if not phi_vals:
+                        continue
                     res['true_next'] = phi_vals[0]
                     res['false_next'] = phi_vals[1]
                     val_list += phi_vals
