@@ -85,7 +85,8 @@ def deflat(ad, func_info):
         ircfg = lifter.new_ircfg_from_asmcfg(asmcfg)
         ircfg_simplifier = IRCFGSimplifierCommon(lifter)
         ircfg_simplifier.simplify(ircfg, addr)
-
+        #save_cfg(ircfg,'ir_%x'%addr)
+    
         # marking the instructions affecting the state variable as nop_addrs
         nop_addrs = find_state_var_usedefs(ircfg, state_var)
         rel_blk_info[addr] = (asmcfg, nop_addrs)
@@ -98,7 +99,7 @@ def deflat(ad, func_info):
         #save_cfg(ircfg, 'ssa_%x'%addr)
 
         # find the possible values of the state variable
-        var_asg, tmpval_list = find_var_asg(ircfg, {state_var})
+        var_asg, tmpval_list = find_var_asg(ircfg, {state_var},loc_db,mdis)
         _log.debug('%#x %s' % (addr, var_asg))
 
         # adding all the possible values to a global list
@@ -114,6 +115,8 @@ def deflat(ad, func_info):
             #extracting the condition from the last 3rd line
             cond_mnem = last_blk.lines[-3].name
             _log.debug('cond used: %s' % cond_mnem)
+            if cond_mnem=='MOV':
+                cond_mnem = last_blk.lines[-4].name
             var_asg['cond'] = cond_mnem
             var_asg['true_next'] = hex(var_asg['true_next'])
             var_asg['false_next'] = hex(var_asg['false_next'])
@@ -204,6 +207,7 @@ if __name__ == '__main__':
     parser.add_argument('filename', help="file to deobfuscate")
     parser.add_argument('patch_filename', help="deobfuscated file name")
     parser.add_argument('address', help="obfuscated function address")
+    parser.add_argument('-b',"--baseaddr", help="file base address")
     parser.add_argument('-a', "--all", action="store_true",
                         help="find and deobfuscate all flattened functions recursively")
     parser.add_argument('-l', "--log", help="logging level (default=INFO)",
@@ -231,10 +235,17 @@ if __name__ == '__main__':
     if cont.arch not in supported_arch:
         _log.error("Architecture unsupported : %s" % cont.arch)
         exit(1)
-
-    section_ep = cont.bin_stream.bin.virt.parent.getsectionbyvad(cont.entry_point).sh
-    bin_base_addr = section_ep.addr - section_ep.offset
-    _log.info('bin_base_addr: %#x' % bin_base_addr)
+    try:
+        if args.baseaddr:
+            _log.info('Base Address:'+args.baseaddr)
+            baseaddr=int(args.baseaddr,16)
+        elif cont.executable.isPE():
+            baseaddr=0x400C00
+            _log.info('Base Address:%x'%baseaddr)
+    except AttributeError:
+        section_ep = cont.bin_stream.bin.virt.parent.getsectionbyvad(cont.entry_point).sh
+        baseaddr = section_ep.addr - section_ep.offset
+        _log.info('Base Address:%x'%baseaddr)
 
     machine = Machine(cont.arch)
     mdis = machine.dis_engine(cont.bin_stream, loc_db=loc_db)
@@ -282,7 +293,7 @@ if __name__ == '__main__':
 
             if patches:
                 for offset, data in patches.items():
-                    fpatch.seek(offset - bin_base_addr)
+                    fpatch.seek(offset - baseaddr)
                     fpatch.write(data)
 
                 fcn_end_time = time.time() - fcn_start_time
